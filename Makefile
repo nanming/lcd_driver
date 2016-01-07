@@ -1,4 +1,4 @@
-KERNEL_DIR=/home/nanming/work/iTop_Kernel
+KERNEL_DIR=/home/nanming/work/kernel_itop
 PWD=$(shell pwd)
 
 all:
