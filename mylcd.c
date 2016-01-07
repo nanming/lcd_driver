@@ -164,8 +164,8 @@ static int mylcd_set_fbinfo(struct mylcd_global *mylcd_global)
 	var->green.length = 8;
 	var->blue.offset = 0;
 	var->blue.length = 8;
-    var->transp.offset = 0;
-    var->transp.length = 0; /* added for LCD RGB32 */
+    var->transp.offset = 24;
+    var->transp.length = 8; /* added for LCD RGB32 */
 
     var->activate = FB_ACTIVATE_NOW;
 
@@ -183,16 +183,10 @@ static int mylcd_set_fbinfo(struct mylcd_global *mylcd_global)
 
 	fb->screen_size =  height * width * bpp / 8;
 
-	fix->smem_start = (dma_addr_t)cma_alloc
-		(mylcd_global->dev, CMA_REGION_FIMD, (size_t)fix->smem_len, 0);
-	fb->screen_base = cma_get_virt(fix->smem_start, fix->smem_len, 1);
+	/*fix->smem_start = (dma_addr_t)cma_alloc*/
+		/*(mylcd_global->dev, CMA_REGION_FIMD, (size_t)fix->smem_len, 0);*/
+	/*fb->screen_base = cma_get_virt(fix->smem_start, fix->smem_len, 1);*/
 
-#if 0
-	fb->screen_base = dma_alloc_writecombine(NULL,
-						 PAGE_ALIGN(fix->smem_len),
-						 (unsigned int *)
-						 &fix->smem_start, GFP_KERNEL);
-#endif
 
     return 0;
 }
@@ -489,6 +483,14 @@ static int mylcd_cfg_register(struct fb_info *info)
     cfg |= (time->rise_vclk << 7) | (time->i_hsync << 6) | (time->i_vsync << 5) | (time->i_vden << 4);
     writel(cfg, mylcd_global->regs + S3C_VIDCON1);
 
+
+#if 1
+	fb->screen_base = dma_alloc_writecombine(NULL,
+						 PAGE_ALIGN(fix->smem_len),
+						 (unsigned int *)
+						 &fix->smem_start, GFP_KERNEL);
+#endif
+
     start_addr = fix->smem_start;
     end_addr = fix->smem_start + fb->screen_size;
     writel(start_addr, mylcd_global->regs + S3C_VIDADDR_START0(0));
@@ -574,18 +576,20 @@ static int __devexit myfb_remove(struct platform_device *pdev)
     mylcd_display_off(mylcd_global);
     mylcd_bakclight_off();
     unregister_framebuffer(info);
-    iounmap(mylcd_global->regs);
-    /*cma_free(fix->smem_start);*/
+#if 0
 	if (fix->smem_start) {
         iounmap(info->screen_base);
         fix->smem_start = 0;
         fix->smem_len = 0;
     }
-    /*dma_free_writecombine(NULL, PAGE_ALIGN(mylcd_global->fb_info->fix.smem_len),*/
-            /*(unsigned int *) mylcd_global->fb_info->screen_base, mylcd_global->fb_info->fix.smem_start);*/
+#endif 
+
+    dma_free_writecombine(NULL, PAGE_ALIGN(mylcd_global->fb_info->fix.smem_len),
+            (unsigned int *) mylcd_global->fb_info->screen_base, mylcd_global->fb_info->fix.smem_start);
+    iounmap(mylcd_global->regs);
     framebuffer_release(info);
-    kfree(info);
-    kfree(mylcd_global);
+    /*kfree(info);*/
+    /*kfree(mylcd_global);*/
 #endif
     return 0;
 }
@@ -597,6 +601,8 @@ static int __devinit myfb_probe(struct platform_device *pdev)
     struct clk *mout_mpll = NULL;
 	struct clk *lcd_clk = NULL;
 	struct resource *res = NULL;
+    /*struct fb_info *fb = mylcd_global->fb_info;*/
+	/*struct fb_fix_screeninfo *fix = &fb->fix;*/
 
     printk("My first 4412 LCD driver Test Begin.\n");
 	mylcd_global = kzalloc(sizeof(struct mylcd_global), GFP_KERNEL);
