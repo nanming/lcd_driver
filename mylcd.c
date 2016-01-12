@@ -35,15 +35,17 @@
 #include <plat/gpio-cfg.h>
 #include <plat/regs-fb-s5p.h>
 #include <linux/cma.h>
+#include <plat/fb-s5p.h>
 
 #define DRIVER_NAME "mylcd_4412"
 #define S3CFB_NAME		"s3cfb"
 #define CMA_REGION_FIMD 	"fimd"
 
 static int mylcd_cfg_register(struct fb_info *info);
+struct s3c_platform_fb *to_fb_plat(struct device *dev);
 static unsigned int pseudo_pal[16];
 static struct mylcd_global *mylcd_global;
-static struct clk *global_clk;
+/*static struct clk *global_clk;*/
 static struct my_lcd_timing my_lcd_timing = {
     .h_spw = 32,
     .h_bpd = 80,
@@ -51,8 +53,8 @@ static struct my_lcd_timing my_lcd_timing = {
     .v_spw = 5,
     .v_bpd = 14,
     .v_fpd = 3,
-    .rise_vclk = 1,
-    .i_hsync = 0,
+    .rise_vclk = 0,
+    .i_hsync = 1,
     .i_vsync = 1,
     .i_vden  = 0,
 };
@@ -60,7 +62,7 @@ static struct my_lcd_timing my_lcd_timing = {
 static struct lcd_desc lcd_desc = {
     .height = 1280,
     .width= 800,
-    .bpp    = 24,
+    .bpp    = 32,
     .freq   = 50,
 };
 
@@ -182,11 +184,6 @@ static int mylcd_set_fbinfo(struct mylcd_global *mylcd_global)
 
 
 	fb->screen_size =  height * width * bpp / 8;
-
-	/*fix->smem_start = (dma_addr_t)cma_alloc*/
-		/*(mylcd_global->dev, CMA_REGION_FIMD, (size_t)fix->smem_len, 0);*/
-	/*fb->screen_base = cma_get_virt(fix->smem_start, fix->smem_len, 1);*/
-
 
     return 0;
 }
@@ -411,10 +408,9 @@ static void mylcd_cfg_timing(struct mylcd_global *mylcd_global)
 
 static void mylcd_cfg_size(struct mylcd_global *mylcd_global)
 {
-    u32 cfg;
+    u32 cfg = 0;
     struct lcd_desc *lcd_desc;
 
-    cfg = 0;
     lcd_desc = mylcd_global->lcd_desc;
 
     cfg  |= S3C_VIDTCON2_HOZVAL(lcd_desc->width - 1);
@@ -447,6 +443,15 @@ static void mylcd_display_on(struct mylcd_global *mylcd_global)
     writel(cfg, mylcd_global->regs + S3C_VIDCON0);
 }
 
+#define S3C_VIDCON2_RGB_SKIP_EN     (1 << 27)
+#define S3C_VIDCON2_RGB_SKIP_DISABLE     (0 << 27)
+#define S3C_VIDCON2_RGB_ORDER_E_MASK    (7 << 19)
+#define S3C_VIDCON2_RGB_ORDER_E_SHIFT   (19)
+#define S3C_VIDCON2_RGB_ORDER_O_MASK    (7 << 16)
+#define S3C_VIDCON2_RGB_ORDER_O_SHIFT   (16)
+#define S3C_VIDCON2_RGB_WB_FRAME_SKIP_MASK  (0xf << 0)
+#define S3C_VIDCON2_RGB_WB_FRAME_SKIP_SHIFT (0xf << 0)
+
 static int mylcd_cfg_register(struct fb_info *info)
 {
     u32 cfg;
@@ -464,40 +469,57 @@ static int mylcd_cfg_register(struct fb_info *info)
 
     time = mylcd_global->my_lcd_timing;
 
-    shw = readl(mylcd_global->regs + S3C_WINSHMAP);
-    shw |= S3C_WINSHMAP_PROTECT(0);
-    writel(shw, mylcd_global->regs + S3C_WINSHMAP);
+    /*shw = readl(mylcd_global->regs + S3C_WINSHMAP);*/
+    /*shw |= S3C_WINSHMAP_PROTECT(0);*/
+    /*writel(shw, mylcd_global->regs + S3C_WINSHMAP);*/
 
+    /* VIDCON0*/ 
     cfg = readl(mylcd_global->regs + S3C_VIDCON0);
-    cfg &= ~(S3C_VIDCON0_VIDOUT_MASK);
-    cfg &= ~S3C_VIDCON0_CLKVAL_F(0xff);
-	/*cfg |= S3C_VIDCON0_CLKVAL_F(div - 1);*/
-    cfg |= ((S3C_VIDCON0_VIDOUT_RGB) | (0 << 18) | (S3C_VIDCON0_PNRMODE_RGB_P) | (S3C_VIDCON0_CLKVALUP_ALWAYS) \
-           | (S3C_VIDCON0_CLKVAL_F(12)) | (S3C_VIDCON0_ENVID_DISABLE) | (S3C_VIDCON0_ENVID_F_DISABLE));
+    cfg &= ~(S3C_VIDCON0_VIDOUT_MASK | S3C_VIDCON0_CLKVAL_F(0xff) | S3C_VIDCON0_PNRMODE_MASK);
+    /*cfg |= ((S3C_VIDCON0_VIDOUT_RGB) | (0 << 18) | (S3C_VIDCON0_PNRMODE_RGB_P) | (S3C_VIDCON0_CLKVALUP_ALWAYS) \*/
+    cfg |= ((S3C_VIDCON0_VIDOUT_RGB) | (S3C_VIDCON0_CLKVAL_F(12)) | (0 << S3C_VIDCON0_PNRMODE_SHIFT));
+            /*| (S3C_VIDCON0_ENVID_DISABLE) | (S3C_VIDCON0_ENVID_F_DISABLE));*/
+    cfg &= S3C_VIDCON0_VCLKEN_NORMAL;
+    cfg &= S3C_VIDCON0_CLKVALUP_ALWAYS;
+    cfg &= S3C_VIDCON0_ENVID_F_DISABLE;
+    cfg &= S3C_VIDCON0_ENVID_DISABLE;
 
     writel(cfg, mylcd_global->regs + S3C_VIDCON0);
 
-    cfg = readl(mylcd_global->regs + S3C_VIDCON1);
+    /*cfg = readl(mylcd_global->regs + S3C_VIDCON1);*/
 
-    cfg &= ~(3 << 9);
-    cfg |= (time->rise_vclk << 7) | (time->i_hsync << 6) | (time->i_vsync << 5) | (time->i_vden << 4);
+    /* VIDCON1*/ 
+    cfg = 0;
+    cfg &= ~(S3C_VIDCON1_FIXVCLK_MASK);
+    cfg |= S3C_VIDCON1_FIXVCLK_VCLK_RUN;
+    if (time->rise_vclk) 
+        cfg |= S3C_VIDCON1_IVCLK_RISING_EDGE;
+    if (time->i_hsync)
+        cfg |= S3C_VIDCON1_IHSYNC_INVERT;
+    if (time->i_vsync)
+        cfg |= S3C_VIDCON1_IVSYNC_INVERT;
+    if (time->i_vden)
+        cfg |= S3C_VIDCON1_IVDEN_INVERT;
+    
     writel(cfg, mylcd_global->regs + S3C_VIDCON1);
 
 
-#if 1
-	fb->screen_base = dma_alloc_writecombine(NULL,
-						 PAGE_ALIGN(fix->smem_len),
-						 (unsigned int *)
-						 &fix->smem_start, GFP_KERNEL);
-#endif
+    /* VIDCON2*/ 
+	cfg = readl(mylcd_global->regs + S3C_VIDCON2);
+	cfg &= ~(S3C_VIDCON2_WB_MASK | S3C_VIDCON2_TVFORMATSEL_MASK | \
+					S3C_VIDCON2_TVFORMATSEL_YUV_MASK | S3C_VIDCON2_RGB_ORDER_E_MASK | \
+                    S3C_VIDCON2_RGB_ORDER_O_MASK | S3C_VIDCON2_RGB_SKIP_EN);
+    cfg |= (S3C_VIDCON2_WB_DISABLE | S3C_VIDCON2_RGB_SKIP_DISABLE | (0 < S3C_VIDCON2_RGB_ORDER_E_SHIFT) | (0 < S3C_VIDCON2_RGB_ORDER_O_SHIFT));
+    writel(cfg , mylcd_global + S3C_VIDCON2);
 
+     /*WINCON0*/ 
     start_addr = fix->smem_start;
     end_addr = fix->smem_start + fb->screen_size;
     writel(start_addr, mylcd_global->regs + S3C_VIDADDR_START0(0));
     writel(end_addr, mylcd_global->regs + S3C_VIDADDR_END0(0));
 
 /*#define S3C_VIDADDR_PAGEWIDTH(x)		(((x) & 0x1fff) << 0)*/
-    cfg |= (S3C_VIDADDR_OFFSIZE(0) | S3C_VIDADDR_PAGEWIDTH(800 * 24 / 8));
+    cfg = (S3C_VIDADDR_OFFSIZE(0) | S3C_VIDADDR_PAGEWIDTH(800 * 32 / 8));
     writel(cfg, mylcd_global->regs + S3C_VIDADDR_SIZE(0));
 
     cfg = readl(mylcd_global->regs + S3C_WINCON(0));
@@ -511,7 +533,7 @@ static int mylcd_cfg_register(struct fb_info *info)
 
     cfg = readl(mylcd_global->regs + S3C_VIDOSD0B); /*windows0's buffer size*/ 
     cfg &= ~(S3C_VIDOSD_RIGHT_X(0) | S3C_VIDOSD_BOTTOM_Y(0));
-    cfg |= ((1279 << 11) | 799);
+    cfg |= ((799 << 11) | (1279 < 0));
     writel(cfg, mylcd_global->regs + S3C_VIDOSD0B);
 
     /*cfg = readl(mylcd_global->regs + S3C_VIDOSD0C);*/
@@ -524,15 +546,15 @@ static int mylcd_cfg_register(struct fb_info *info)
     cfg |= (S3C_WINSHMAP_CH_ENABLE(0));
     writel(cfg, mylcd_global->regs + S3C_WINSHMAP);
 
-    cfg = readl(mylcd_global->regs + 0x003C);
-    cfg &= ~((7 << 16) | (7 << 0));
-    cfg |= ((1 << 16) | ( 1 << 0));
-    writel(cfg, mylcd_global->regs + 0x003C);
+    /*cfg = readl(mylcd_global->regs + 0x003C);*/
+    /*cfg &= ~((7 << 16) | (7 << 0));*/
+    /*cfg |= ((1 << 16) | ( 1 << 0));*/
+    /*writel(cfg, mylcd_global->regs + 0x003C);*/
 
 
-    shw = readl(mylcd_global->regs + S3C_WINSHMAP);
-    shw &= ~S3C_WINSHMAP_PROTECT(0);
-    writel(shw, mylcd_global->regs + S3C_WINSHMAP);
+    /*shw = readl(mylcd_global->regs + S3C_WINSHMAP);*/
+    /*shw &= ~S3C_WINSHMAP_PROTECT(0);*/
+    /*writel(shw, mylcd_global->regs + S3C_WINSHMAP);*/
     return 0;
 
 #if 0
@@ -555,11 +577,11 @@ static int mylcd_cfg_register(struct fb_info *info)
 
 static int __devexit myfb_remove(struct platform_device *pdev)
 {
-#if 1
-    struct fb_info *info = mylcd_global->fb_info;
-    struct fb_fix_screeninfo *fix = &info->fix;
-	struct clk *lcd_clk = NULL;
+    /*struct fb_fix_screeninfo *fix = &info->fix;*/
+	struct s3c_platform_fb *pdata = to_fb_plat(&pdev->dev);
+	/*struct clk *lcd_clk = NULL;*/
 
+#if 0
 	lcd_clk = clk_get(&pdev->dev, "lcd");
 	if (IS_ERR(lcd_clk)) {
 		printk(KERN_ERR "failed to get ip clk for fimd0\n");
@@ -572,45 +594,62 @@ static int __devexit myfb_remove(struct platform_device *pdev)
     clk_disable(global_clk);
     clk_put(global_clk);
 
-    printk("mylcd modules exit routine\n");
-    mylcd_display_off(mylcd_global);
-    mylcd_bakclight_off();
-    unregister_framebuffer(info);
-#if 0
-	if (fix->smem_start) {
-        iounmap(info->screen_base);
-        fix->smem_start = 0;
-        fix->smem_len = 0;
-    }
 #endif 
-
-    dma_free_writecombine(NULL, PAGE_ALIGN(mylcd_global->fb_info->fix.smem_len),
-            (unsigned int *) mylcd_global->fb_info->screen_base, mylcd_global->fb_info->fix.smem_start);
+    /*printk("mylcd modules exit routine\n");*/
     iounmap(mylcd_global->regs);
-    framebuffer_release(info);
+    /*mylcd_display_off(mylcd_global);*/
+    /*mylcd_bakclight_off();*/
+    pdata->clk_off(pdev, &mylcd_global->clock);
+    unregister_framebuffer(mylcd_global->fb_info);
+	/*if (fix->smem_start) {*/
+        /*iounmap(info->screen_base);*/
+        /*fix->smem_start = 0;*/
+        /*fix->smem_len = 0;*/
+    /*}*/
+
+    dma_free_coherent(mylcd_global->dev, (mylcd_global->fb_info->fix.smem_len), mylcd_global->fb_info->screen_base, mylcd_global->fb_info->fix.smem_start);
+    framebuffer_release(mylcd_global->fb_info);
+
+    if (pdata->backlight_off)
+        pdata->backlight_off(pdev);
     /*kfree(info);*/
-    /*kfree(mylcd_global);*/
-#endif
+    kfree(mylcd_global);
     return 0;
 }
+
+struct s3c_platform_fb *to_fb_plat(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+
+	return (struct s3c_platform_fb *)pdev->dev.platform_data;
+}
+
 static int __devinit myfb_probe(struct platform_device *pdev)
 {
-#if 1
-    int ret;
-    struct clk *clk = NULL;
-    struct clk *mout_mpll = NULL;
-	struct clk *lcd_clk = NULL;
+    int ret = 0;
+    /*struct clk *clk = NULL;*/
+    /*struct clk *mout_mpll = NULL;*/
+	/*struct clk *lcd_clk = NULL;*/
 	struct resource *res = NULL;
-    /*struct fb_info *fb = mylcd_global->fb_info;*/
-	/*struct fb_fix_screeninfo *fix = &fb->fix;*/
+	struct s3c_platform_fb *pdata = NULL;
+    struct fb_fix_screeninfo *fix;
+    struct fb_info *info;
 
     printk("My first 4412 LCD driver Test Begin.\n");
 	mylcd_global = kzalloc(sizeof(struct mylcd_global), GFP_KERNEL);
     mylcd_global->my_lcd_timing = &my_lcd_timing;
     mylcd_global->lcd_desc = &lcd_desc;
     mylcd_global->dev = &pdev->dev;
+
+    pdata = to_fb_plat(&pdev->dev);
     
+    if (pdata->cfg_gpio)
+        pdata->cfg_gpio(pdev);
+
+    if (pdata->clk_on)
+        pdata->clk_on(pdev, &mylcd_global->clock);
     /* enable the clk of lcd, sclk_fimd is the source of lcd*/ 
+#if 0
 	lcd_clk = clk_get(&pdev->dev, "lcd");
 	if (IS_ERR(lcd_clk)) {
         printk("failed to get clk for lcd\n");
@@ -642,9 +681,10 @@ static int __devinit myfb_probe(struct platform_device *pdev)
     clk_enable(clk);
 	clk_put(mout_mpll);
     /*clk_put(clk);*/
+#endif
 
     /* Configure the port for LCD func*/
-    mylcd_cfg_gpio();
+    /*mylcd_cfg_gpio();*/
 
     mylcd_global->fb_info = framebuffer_alloc(0, mylcd_global->dev);
     if (!mylcd_global->fb_info) {
@@ -656,15 +696,24 @@ static int __devinit myfb_probe(struct platform_device *pdev)
     /* Set the fix and var of fb_info*/ 
     ret = mylcd_set_fbinfo(mylcd_global);
 
-    res = request_mem_region(0x11c00000, SZ_32K, pdev->name);
+#if 1
+    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+    /*printk("res->start = 0x%x， res->end = 0x%x\n", res->start, res->end);*/
     if (!res) {
-        printk("Not enough memory for ioremap\n");
-        return -ENOMEM;
+        dev_err(mylcd_global->dev,
+            "failed to get io memory region\n");
+        ret = -EINVAL;
+    }
+    res = request_mem_region(res->start, res->end - res->start + 1, pdev->name);
+    /*res = request_mem_region(0x11c00000, SZ_32K, pdev->name);*/
+    if (!res) {
+        dev_err(mylcd_global->dev, "failed to request memory for ioremap\n");
+        ret = -ENOMEM;
     }
     mylcd_global->regs = ioremap(res->start, res->end - res->start + 1);
     if (!mylcd_global->regs) {
-        printk("failed to ioremap io for mylcd\n");
-        return -EINVAL;
+        dev_err(mylcd_global->dev,"failed to ioremap io for mylcd\n");
+        ret = -EINVAL;
     }
 
     /* Configure the timing */
@@ -672,42 +721,66 @@ static int __devinit myfb_probe(struct platform_device *pdev)
     mylcd_cfg_size(mylcd_global);
     mylcd_cfg_register(mylcd_global->fb_info);
 
+
+    info = mylcd_global->fb_info;
+    fix = &info->fix;
+	info->screen_base = dma_alloc_writecombine(mylcd_global->dev, fix->smem_len, (unsigned int *) &fix->smem_start, GFP_KERNEL);
+#endif
+
     register_framebuffer(mylcd_global->fb_info);
     mylcd_display_on(mylcd_global);
-#endif
-    return 0;
+    printk("Lcd for 4412 display on\n");
+    if (pdata->backlight_on)
+        pdata->backlight_on(pdev);
+
+	if (pdata->lcd_on)
+		pdata->lcd_on(pdev);
+
+    return ret;
 
 err_allocfb:
     framebuffer_release(mylcd_global->fb_info);
+#if 0
 err_clk2:
     clk_put(mout_mpll);
 err_clk1:
     clk_put(clk);
 err_clk0:
     clk_put(lcd_clk);
+#endif
 
-	return -EINVAL;
+    return -EINVAL;
 }
 
 static struct platform_driver mylcdfb_driver = {
-	.probe		= myfb_probe,
+    .probe		= myfb_probe,
     .remove		= myfb_remove,
-	/*.suspend	= s3cfb_suspend,*/
-	/*.resume		= s3cfb_resume,*/
-	.driver		= {
-		.name	= S3CFB_NAME,
-		.owner	= THIS_MODULE,
-	},
+    /*.suspend	= s3cfb_suspend,*/
+    /*.resume		= s3cfb_resume,*/
+    .driver		= {
+        .name	= S3CFB_NAME,
+        .owner	= THIS_MODULE,
+    },
 };
 
 static int mylcd_register(void)
 {
-	platform_driver_register(&mylcdfb_driver);
+    platform_driver_register(&mylcdfb_driver);
 	return 0;
 }
 static void mylcd_exit(void)
 {
     platform_driver_unregister(&mylcdfb_driver);
+#if 0
+    /*mylcd_display_off(mylcd_global);*/
+    mylcd_bakclight_off();
+    printk("ksjdfkdjf\n");
+    unregister_framebuffer(mylcd_global->fb_info);
+    dma_free_coherent(NULL, (mylcd_global->fb_info->fix.smem_len), mylcd_global->fb_info->screen_base, mylcd_global->fb_info->fix.smem_start);
+
+    /*iounmap(mylcd_global->regs);*/
+    framebuffer_release(mylcd_global->fb_info);
+#endif
 }
 
 module_init(mylcd_register);

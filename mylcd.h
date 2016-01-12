@@ -28,6 +28,7 @@ struct mylcd_global {
     struct fb_info *fb_info;
     struct lcd_desc *lcd_desc;
     struct my_lcd_timing *my_lcd_timing;
+    struct clk *clock;
 	struct device		*dev;
 };
 #endif
